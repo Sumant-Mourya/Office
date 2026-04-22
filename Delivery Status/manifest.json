@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "17Track Auto Updater",
+  "version": "1.0",
+  "permissions": [
+    "identity",
+    "tabs",
+    "scripting",
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://t.17track.net/*",
+    "https://www.royalmail.com/*",
+    "https://sheets.googleapis.com/*"
+  ],
+  "oauth2": {
+    "client_id": "701845733873-8v3uo0psg2aug41f034cvn4999tamt04.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/spreadsheets"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

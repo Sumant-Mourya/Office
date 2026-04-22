@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 10px; margin: 0; background: #fff; }
+    #search { width: 100%; box-sizing: border-box; padding: 15px; font-size: 18px; border: 2px solid #333; outline: none; }
+    #suggestions { border: 1px solid #ccc; max-height: 200px; overflow-y: auto; display: none; margin-top: 5px; }
+    .item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 16px; }
+    .selected { background: #000 !important; color: #fff !important; }
+    #count { position: fixed; bottom: 5px; right: 10px; font-size: 11px; color: #999; }
+    #loader { color: red; font-weight: bold; font-size: 12px; margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+  <div id="loader">Syncing Data...</div>
+  <input type="text" id="search" placeholder="Search item..." autocomplete="off" autofocus>
+  <div id="suggestions"></div>
+  <div id="count">Items added: <span id="sessionCount">0</span></div>
+
+  <script>
+    let masterRows = [];
+    let masterHeaders = [];
+    let currentFiltered = [];
+    let cursor = 0;
+    let totalAdded = 0;
+    const certCols = ["Name", "Color", "Weight", "Shape & Cut", "Measurement", "Hindi Name", "Item", "Specific Gravity", "Optic Character", "Refractive Index", "Remark", "Issued To", "Images"];
+
+    const input = document.getElementById('search');
+    const box = document.getElementById('suggestions');
+
+    // FORCE FOCUS ON LOAD
+    window.onload = () => {
+      input.focus();
+      // Second attempt after a tiny delay to bypass browser dialog restrictions
+      setTimeout(() => { input.focus(); }, 500);
+
+      google.script.run.withSuccessHandler(res => {
+        masterRows = res.rows;
+        masterHeaders = res.headers;
+        document.getElementById('loader').style.display = 'none';
+        input.focus(); // Focus again once data is ready
+      }).getInitialData();
+    };
+
+    input.oninput = () => {
+      const val = input.value.toLowerCase();
+      box.innerHTML = '';
+      if (!val) { box.style.display = 'none'; return; }
+      
+      currentFiltered = [];
+      for (let i = 0; i < masterRows.length; i++) {
+        if (masterRows[i][0].toString().toLowerCase().indexOf(val) > -1) {
+          currentFiltered.push(masterRows[i]);
+          if (currentFiltered.length > 8) break; 
+        }
+      }
+
+      if (currentFiltered.length > 0) {
+        box.style.display = 'block';
+        currentFiltered.forEach((row, idx) => {
+          const div = document.createElement('div');
+          div.className = 'item' + (idx === 0 ? ' selected' : '');
+          div.innerText = row[0];
+          div.onclick = () => handleEntry(row);
+          box.appendChild(div);
+        });
+        cursor = 0;
+      } else {
+        box.style.display = 'none';
+      }
+    };
+
+    input.onkeydown = (e) => {
+      const items = document.getElementsByClassName('item');
+      if (e.key === 'ArrowDown' && cursor < items.length - 1) {
+        items[cursor].classList.remove('selected');
+        cursor++;
+        items[cursor].classList.add('selected');
+        items[cursor].scrollIntoView({block: 'nearest'});
+      } else if (e.key === 'ArrowUp' && cursor > 0) {
+        items[cursor].classList.remove('selected');
+        cursor--;
+        items[cursor].classList.add('selected');
+        items[cursor].scrollIntoView({block: 'nearest'});
+      } else if (e.key === 'Enter') {
+        const selectedRow = currentFiltered.length > 0 ? currentFiltered[cursor] : null;
+        handleEntry(selectedRow);
+      }
+    };
+
+    function handleEntry(foundRow) {
+      const itemName = foundRow ? foundRow[0] : input.value;
+      if (!itemName) return;
+
+      input.value = '';
+      box.style.display = 'none';
+      totalAdded++;
+      document.getElementById('sessionCount').innerText = totalAdded;
+
+      let finalRow = certCols.map(col => {
+        if (col === "Name") return itemName;
+        if (col === "Issued To") return "";
+        const hIdx = masterHeaders.indexOf(col);
+        if (foundRow && hIdx > -1) {
+          return foundRow[hIdx] || "NA";
+        }
+        return "NA";
+      });
+
+      google.script.run.silentAdd(finalRow);
+      input.focus(); // Keep focus after entry
+    }
+  </script>
+</body>
+</html>

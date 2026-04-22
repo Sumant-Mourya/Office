@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: sans-serif; padding: 20px; color: #333; }
+      .btn { width: 100%; padding: 12px; margin: 8px 0; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+      .btn-main { background: #1a73e8; color: white; }
+      .btn-success { background: #34a853; color: white; text-decoration: none; display: block; text-align: center; }
+      #loader { display: none; text-align: center; font-style: italic; color: #666; }
+      #results { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="form-ui">
+      <label>Start Date:</label><input type="date" id="start" style="width:100%; margin-bottom:15px;">
+      <label>End Date:</label><input type="date" id="end" style="width:100%; margin-bottom:15px;">
+      <button class="btn btn-main" onclick="run()">Generate Reports</button>
+    </div>
+
+    <div id="loader">Creating Dataset</div>
+
+    <div id="results">
+      <h3>✅ Success!</h3>
+      <a id="link-ss" class="btn btn-success" target="_blank">Open Spreadsheet</a>
+    </div>
+
+    <script>
+      window.onload = () => {
+        const d = new Date().toISOString().split('T')[0];
+        document.getElementById('start').value = d;
+        document.getElementById('end').value = d;
+      };
+
+      function run() {
+        const data = { start: document.getElementById('start').value, end: document.getElementById('end').value };
+        document.getElementById('form-ui').style.display = 'none';
+        document.getElementById('loader').style.display = 'block';
+
+        google.script.run
+          .withSuccessHandler(res => {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('link-ss').href = res.ssUrl;
+          })
+          .withFailureHandler(err => {
+            alert("Error: " + err);
+            document.getElementById('form-ui').style.display = 'block';
+            document.getElementById('loader').style.display = 'none';
+          })
+          .processDateSelection_CreateSheet(data);
+      }
+    </script>
+  </body>
+</html>

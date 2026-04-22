@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    @page { size: A4; margin: 0; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 0; background: #555; -webkit-print-color-adjust: exact !important; }
+    
+    .a4-page { 
+      width: 210mm; height: 297mm; margin: 0 auto; background: white; 
+      display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(5, 57mm); 
+      column-gap: 4mm; row-gap: 1.0mm; box-sizing: border-box; 
+      padding: 6mm 6mm 0 6mm; 
+      page-break-after: always; align-content: start; 
+    }
+
+    .cert-container, .cert-back-container { 
+      position: relative;
+      width: 95%;               /* reduce width here */
+      height: 100%;
+      margin: 0 auto;           /* keep centered */
+      border: 0.1px solid #eee;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #fff;
+      box-sizing: border-box;
+    }
+
+    /* FRONT DESIGN */
+    .header-banner { width: 100%; height: 10mm; object-fit: cover; border-bottom: 1px solid #000; }
+    .content-area { padding: 0mm 3.5mm; position: relative; }
+    .top-row { display: flex; justify-content: space-between; align-items: center; margin-top: 0.4mm; }
+    .report-side { font-size: 7.8px; font-weight: bold; width: 33%; }
+    .badge-center { width: 33%; text-align: center; }
+    .badge-img { height: 3.8mm; margin: 0 auto; display: block; }
+    .dynamic-item-header { color: red; font-weight: bold; font-size: 8px; text-decoration: underline; text-align: center; margin: 0.1mm 0; text-transform: uppercase; }
+    .intro-text { font-size: 6.2px; text-align: center; margin-bottom: 0.4mm; font-weight: bold; line-height: 1; }
+    .main-body { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; }
+    .data-table { width: 66%; border-collapse: collapse; }
+    .data-table td { font-size: 8px; padding: 0.2mm 0; color: #000; font-weight: bold; vertical-align: top; line-height: 1.05; }
+    .label { width: 38%; } .colon { width: 5%; text-align: center; } .value { width: 57%; color: #003366; }
+    .right-column { width: 31%; display: flex; flex-direction: column; align-items: center; text-align: center; margin-top: 1mm; }
+    .image-label { font-size: 7px; font-weight: bold; margin-bottom: 0.2mm; margin-top: 2mm; color: #000; min-height: 7px; }
+    .product-img { width: 15mm; height: 15mm; object-fit: contain; margin-top: 1mm; margin-bottom: 0.5mm; }
+    .approved-by { font-size: 7px; font-weight: bold; line-height: 1; }
+    .footer-banner { width: 100%; height: 7mm; object-fit: cover; margin-top: auto; }
+
+    /* BACK DESIGN - FULL DATA RESTORED */
+    .back-content { padding: 3mm; color: #000; }
+    .terms-title { font-size: 8.5px; font-weight: bold; margin-bottom: 1mm; border-bottom: 1px solid #3498db; display: inline-block;}
+    .terms-text { font-size: 6.2px; line-height: 1.25; text-align: justify; margin-bottom: 3mm; }
+    .back-logo-row { display: flex; align-items: center; margin-bottom: 2mm; margin-top: 2mm; }
+    .back-logo-img { height: 8mm; margin-right: 3mm; }
+    .contact-info { font-size: 7.5px; line-height: 1.4; font-weight: bold; color: #333; }
+    .back-blue-bar { width: 100%; height: 5mm; background-color: #3498db; margin-top: auto; }
+
+    @media print { body { background: none; } .a4-page { margin: 0; border: none; } .no-print { display: none; } }
+    .btn-container { position: fixed; top: 10px; right: 10px; z-index: 999; }
+    .print-btn { padding: 12px 20px; background: #2c3e50; color: white; border: none; cursor: pointer; font-weight: bold; border-radius: 5px; }
+  </style>
+</head>
+<body>
+
+  <div class="btn-container no-print">
+    <button class="print-btn" onclick="window.print()">🖨️ PRINT DOUBLE SIDED</button>
+  </div>
+
+  <? for (var p = 0; p < certs.length; p += 10) { 
+       var chunk = certs.slice(p, p + 10); ?>
+    
+    <div class="a4-page">
+      <? for (var i = 0; i < chunk.length; i++) { ?>
+        <div class="cert-container">
+          <img src="https://i.ibb.co/PGr7n2GY/chrome-D9qb-K7ep-Rw.png" class="header-banner">
+          <div class="content-area">
+            <div class="top-row">
+              <div class="report-side">Report No: <?= chunk[i].reportNo ?></div>
+              <div class="badge-center"><img src="https://i.ibb.co/dwy5bvwm/chrome-8c6-Eh-ZJb-Au.png" class="badge-img"></div>
+              <div class="report-side" style="text-align: right;">Lot No: <?= chunk[i].lotNo ?></div>
+            </div>
+            <div class="dynamic-item-header"><?= chunk[i].itemName ?></div>
+            <div class="intro-text">To whomsoever it may concern, for the agreed specimen gemological observation obtained are as follows</div>
+            <div class="main-body">
+              <table class="data-table">
+                <tr><td class="label">Color</td><td class="colon">:</td><td class="value"><?= chunk[i].color ?></td></tr>
+                <tr><td class="label">Weight</td><td class="colon">:</td><td class="value"><?= chunk[i].weight ?></td></tr>
+                <tr><td class="label">Shape & Cut</td><td class="colon">:</td><td class="value"><?= chunk[i].shape ?></td></tr>
+                <tr><td class="label">Measurement</td><td class="colon">:</td><td class="value"><?= chunk[i].measure ?></td></tr>
+                <tr><td class="label">Hindi Name</td><td class="colon">:</td><td class="value"><?= chunk[i].hindi ?></td></tr>
+                <tr><td class="label">Specific Gravity</td><td class="colon">:</td><td class="value"><?= chunk[i].sg ?></td></tr>
+                <tr><td class="label">Optic Character</td><td class="colon">:</td><td class="value"><?= chunk[i].optic ?></td></tr>
+                <tr><td class="label">Refractive Index</td><td class="colon">:</td><td class="value"><?= chunk[i].ri ?></td></tr>
+                <tr><td class="label">Remark</td><td class="colon">:</td><td class="value"><?= chunk[i].remark ?></td></tr>
+                <tr><td class="label">Issue</td><td class="colon">:</td><td class="value"><?= chunk[i].issue ?></td></tr>
+              </table>
+              <div class="right-column">
+                <div class="image-label"><?= chunk[i].imageTitle ?></div>
+                <img src="<?= chunk[i].imageUrl ?>" class="product-img">
+                <div class="approved-by">Approved By<br><span style="font-size: 6px; color: #444;">Gemologist, G.A.L</span></div>
+              </div>
+            </div>
+          </div>
+          <img src="https://i.ibb.co/TBtPxqTD/chrome-Toc-Feqez0-B.png" class="footer-banner">
+        </div>
+      <? } ?>
+    </div>
+
+    <div class="a4-page">
+      <? for (var i = 0; i < chunk.length; i++) { ?>
+        <div class="cert-back-container">
+          <div class="back-content">
+            <div class="terms-title">Terms & Conditions:</div>
+            <div class="terms-text">
+              The report contains the characteristics of the article described herein, after called a GAL it has been carefully graded, tested & analyzed by GAL with specialized instruments. The report would be considered Null and Void if any alteration(s) is/are made to the article or the report itself. The parties recognize the opinions may reasonably vary regarding the characteristics covered in this report, hence GAL or any member of its staff, at any time, may not be held responsible for any discrepancy which may result from the application of grading methods. This report should not be considered as an appraisal or a guarantee/warranty. In the event of any claim by the client or any person for the damage to the articles, or damage resulting directly or indirectly from the report, the liability of GAL shall be limited to the amount it receives as fee in connection with the report. This report should not be used for any legal purpose. All matters, disputes or references to arbitration arising out of this report shall be subjected to jurisdiction of Nainital, Uttarakhand.
+            </div>
+            
+            <div class="back-logo-row">
+               <img src="https://i.ibb.co/RkQJ8hjK/chrome-Jy8v-Mkg-Vh-I.png" class="back-logo-img">
+            </div>
+
+            <div class="contact-info">
+              Address : 180, Malviya Nagar, Jaipur - 302017, Rajasthan, India.<br>
+              Email : info@gemanlysislab.com<br>
+              Website : www.gemanalysislab.com
+            </div>
+          </div>
+          <div class="back-blue-bar"></div>
+        </div>
+      <? } ?>
+    </div>
+  <? } ?>
+</body>
+</html>

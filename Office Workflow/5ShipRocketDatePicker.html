@@ -1,0 +1,96 @@
+!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; line-height: 1.6; background: #f4f4f9; text-align: center; }
+    .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    
+    /* Input Section Styling */
+    #inputSection { display: block; text-align: left; }
+    label { font-weight: bold; font-size: 13px; color: #444; display: block; margin-bottom: 5px; }
+    input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    
+    /* Button Styling */
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    #processBtn { background: #1a73e8; color: white; }
+    #processBtn:disabled { background: #aaa; cursor: not-allowed; }
+    
+    /* Download Section Styling */
+    #downloadArea { display: none; padding: 10px 0; }
+    .success-icon { font-size: 40px; color: #34a853; margin-bottom: 10px; }
+    .dl-btn { background: #34a853; text-decoration: none; display: block; padding: 15px; color: white; border-radius: 4px; font-weight: bold; font-size: 16px; }
+    .dl-btn:hover { background: #2d8e47; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    .stats { font-size: 14px; color: #666; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div id="inputSection">
+    <label>Start Date:</label>
+    <input type="date" id="start">
+    
+    <label>End Date:</label>
+    <input type="date" id="end">
+    
+    <button id="processBtn" class="btn" onclick="startShiprocketProcess()">Generate Shiprocket File</button>
+  </div>
+
+  <div id="downloadArea">
+    <div class="success-icon">✅</div>
+    <h3 style="margin: 0 0 10px 0; color: #333;">Excel Ready!</h3>
+    <p class="stats" id="recordCount"></p>
+    
+    <a id="downloadLink" class="dl-btn" target="_blank" onclick="google.script.host.close()">
+       📥 Download Shiprocket XLSX
+    </a>
+    <p style="font-size: 11px; color: #999; margin-top: 15px;">
+      Clicking download will close this window.
+    </p>
+  </div>
+</div>
+
+<script>
+  // Set default dates
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('start').value = today;
+  document.getElementById('end').value = today;
+
+  function startShiprocketProcess() {
+    const btn = document.getElementById('processBtn');
+    const inputSection = document.getElementById('inputSection');
+    const start = document.getElementById('start').value;
+    const end = document.getElementById('end').value;
+
+    if(!start || !end) return alert("Please select dates");
+
+    // UI Feedback: Change button state
+    btn.disabled = true;
+    btn.innerText = "Processing Orders...";
+    
+    google.script.run
+      .withSuccessHandler(function(response) {
+        // HIDE the date choosing section
+        inputSection.style.display = 'none';
+        
+        // SHOW the download section
+        const downloadArea = document.getElementById('downloadArea');
+        const link = document.getElementById('downloadLink');
+        const countText = document.getElementById('recordCount');
+        
+        countText.innerText = "Total Orders Processed: " + response.count;
+        link.href = response.url;
+        
+        downloadArea.style.display = 'block';
+      })
+      .withFailureHandler(function(err) {
+        alert("Error: " + err.message);
+        btn.disabled = false;
+        btn.innerText = "Generate Shiprocket File";
+      })
+      .processAndGenerateShiprocket({start: start, end: end});
+  }
+</script>
+
+</body>
+</html>

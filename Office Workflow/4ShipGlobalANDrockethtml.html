@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body {
+  font-family: Arial;
+  text-align: center;
+  padding: 30px;
+}
+
+.loader {
+  font-size: 18px;
+  margin-bottom: 20px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 12px 20px;
+  margin: 10px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: white;
+  font-weight: bold;
+  transition: 0.2s;
+}
+
+.excel { background: #1d6f42; }
+.csv { background: #007bff; }
+.danger { background: #d93025; }
+
+.btn:hover {
+  opacity: 0.85;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#summary {
+  font-size: 13px;
+  color: #444;
+  margin-top: 6px;
+  white-space: pre-line;
+}
+</style>
+</head>
+
+<body>
+
+<div id="status" class="loader">⏳ Checking refund orders from Drive CSV files...</div>
+<div id="summary"></div>
+<div id="actions"></div>
+<div id="buttons"></div>
+
+<script>
+function downloadCSV(csvData, filename) {
+  if (!csvData) return;
+  const a = document.createElement('a');
+  a.href = csvData;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function setActionButtonsDisabled(disabled) {
+  const actionButtons = document.querySelectorAll('#actions button');
+  actionButtons.forEach(btn => { btn.disabled = disabled; });
+}
+
+function buildDownloadButtons(res) {
+  const buttons = document.getElementById('buttons');
+  buttons.innerHTML = '';
+
+  const makeButton = (label, csvData, filename) => {
+    const btn = document.createElement('button');
+    btn.className = 'btn csv';
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.disabled = !csvData;
+    btn.addEventListener('click', () => downloadCSV(csvData, filename));
+    buttons.appendChild(btn);
+  };
+
+  makeButton('Download Shiprocket CSV', res.shiprocketCsv, 'shiprocket.csv');
+  makeButton('Download ShipGlobal CSV', res.shipglobalCsv, 'shipglobal.csv');
+}
+
+function proceedGeneration() {
+  setActionButtonsDisabled(true);
+  document.getElementById('status').textContent = '⏳ Generating label files...';
+
+  google.script.run.withSuccessHandler(function(res) {
+    document.getElementById('status').textContent = '✅ CSV Files Ready';
+    buildDownloadButtons(res);
+    setActionButtonsDisabled(false);
+  }).withFailureHandler(function(err) {
+    document.getElementById('status').textContent = '❌ Generation failed';
+    document.getElementById('summary').textContent = err && err.message ? err.message : String(err);
+    setActionButtonsDisabled(false);
+  }).generateAllFiles();
+}
+
+function buildActionButtons() {
+  const actions = document.getElementById('actions');
+  actions.innerHTML = '';
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn danger';
+  deleteBtn.type = 'button';
+  deleteBtn.textContent = 'Delete Red Rows';
+  deleteBtn.addEventListener('click', function() {
+    setActionButtonsDisabled(true);
+    document.getElementById('status').textContent = '⏳ Deleting red rows from ReadyToShip...';
+
+    google.script.run.withSuccessHandler(function(res) {
+      document.getElementById('status').textContent = '✅ Red rows deleted';
+      document.getElementById('summary').textContent = 'Deleted rows: ' + (res.deletedRows || 0);
+      setActionButtonsDisabled(false);
+    }).withFailureHandler(function(err) {
+      document.getElementById('status').textContent = '❌ Delete failed';
+      document.getElementById('summary').textContent = err && err.message ? err.message : String(err);
+      setActionButtonsDisabled(false);
+    }).deleteRedRowsFromReadyToShip();
+  });
+
+  const proceedBtn = document.createElement('button');
+  proceedBtn.className = 'btn excel';
+  proceedBtn.type = 'button';
+  proceedBtn.textContent = 'Proceed To Generate Labels';
+  proceedBtn.addEventListener('click', proceedGeneration);
+
+  actions.appendChild(deleteBtn);
+  actions.appendChild(proceedBtn);
+}
+
+window.onload = function() {
+
+  google.script.run.withSuccessHandler(function(res) {
+    const marked = res.rowsMarkedRed || 0;
+    const checked = res.csvFilesChecked || 0;
+    const refundIds = res.refundOrderIdsFound || 0;
+
+    document.getElementById('status').textContent = marked > 0
+      ? '✅ Refund check complete. Matching rows marked red.'
+      : '✅ Refund check complete. No matching ReadyToShip rows found.';
+
+    document.getElementById('summary').textContent =
+      'CSV files checked: ' + checked + '\n' +
+      'Refund order IDs found: ' + refundIds + '\n' +
+      'Rows marked red: ' + marked;
+
+    buildActionButtons();
+  }).withFailureHandler(function(err) {
+    document.getElementById('status').textContent = '❌ Refund pre-check failed';
+    document.getElementById('summary').textContent = err && err.message ? err.message : String(err);
+  }).precheckRefundOrders();
+};
+</script>
+
+</body>
+</html>
