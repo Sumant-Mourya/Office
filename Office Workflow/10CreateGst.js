@@ -53,8 +53,8 @@ function Create_Gst() {
   const headers = sourceSheet.getRange(2, 1, 1, lastCol).getValues()[0];
   const data = sourceSheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
 
-  const purchaseDateIndex = findColumn(headers, "Purchase Date");
-  if (purchaseDateIndex === -1) throw new Error("Purchase Date column not found.");
+  const purchaseDateIndex = findColumn(headers, "PURCHASE_DATE");
+  if (purchaseDateIndex === -1) throw new Error("PURCHASE_DATE column not found.");
 
   // collect available months from data to show in a dropdown
   const monthsSet = {};
@@ -178,16 +178,16 @@ function processCopyForMonth(targetMonth, outputName) {
     }
   }
 
-  const purchaseDateIndex = findColumn(headers, "Purchase Date");
-  const brandIndex = findColumn(headers, "Brand Name");
-  const salesChannelIndex = findColumn(headers, "Sales Channel");
-  const stateIndex = findColumn(headers, "State");
-  const pincodeIndex = findColumn(headers, "Pincode");
-  const priceIndex = findColumn(headers, "Currency Price");
-  const countryIndex = findColumn(headers, "Country");
-  const orderIdIndex = findColumn(headers, "PortalOrderID");
-  let itemNameIndex = findColumn(headers, "Item Name");
-  let hsnIndex = findColumn(headers, "HSN Code");
+  const purchaseDateIndex = findColumn(headers, "PURCHASE_DATE");
+  const brandIndex = findColumn(headers, "BRAND_NAME");
+  const salesChannelIndex = findColumn(headers, "SALES_CHANNEL");
+  const stateIndex = findColumn(headers, "STATE");
+  const pincodeIndex = findColumn(headers, "PINCODE");
+  const priceIndex = findColumn(headers, "CURRENCY_PRICE");
+  const countryIndex = findColumn(headers, "COUNTRY");
+  const orderIdIndex = findColumn(headers, "PORTAL_ORDER_ID");
+  let itemNameIndex = findColumn(headers, "ITEM_NAME");
+  let hsnIndex = findColumn(headers, "HSN_CODE");
   // Note: findColumn is now robust and handles common variants; log resolved headers
   Logger.log('Resolved columns — Item Name index: ' + itemNameIndex + (itemNameIndex >= 0 ? ' ("' + headers[itemNameIndex] + '")' : '') + ', HSN index: ' + hsnIndex + (hsnIndex >= 0 ? ' ("' + headers[hsnIndex] + '")' : ''));
 

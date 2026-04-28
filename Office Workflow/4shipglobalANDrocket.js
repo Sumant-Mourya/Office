@@ -434,7 +434,7 @@ function generateAllFiles() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("ReadyToShip");
   const data = sheet.getDataRange().getValues();
 
-  const today1 = Utilities.formatDate(new Date(), "GMT+5:30", "yyyy-MM-dd");
+  const today1 = Utilities.formatDate(new Date(), "GMT+5:30", "dd-MM-yyyy");
   const today2 = Utilities.formatDate(new Date(), "GMT+5:30", "yyyy-MM-dd");
 
   const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Configuration");
@@ -557,6 +557,7 @@ function generateAllFiles() {
       r[6] = "3";
       r[7] = "2";
       r[8] = "USD";
+      r[9] = "=\"0\"";
 
       // Name Logic
       const fullName = String(row[17] || "").trim();
@@ -586,6 +587,7 @@ function generateAllFiles() {
       r[24] = "1";
       r[25] = "6";
       r[26] = "71179010";
+      r[27] = "=\"0\"";
 
       shipglobalData.push(r);
     }

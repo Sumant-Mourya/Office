@@ -6,6 +6,9 @@ const STATUS_MOVER_MAIN_TAB_CELL = 'B2';
 const ORDER_DATE_COLUMN_INDEX = 8; // Column H (1-based)
 const STATUS_COLUMN_INDEX = 28; // Column AB (1-based)
 const STATUS_MOVER_LOG_SHEET_NAME = 'log';
+const ENABLE_STATUS_MOVER_LOGGING = true;
+const YEAR_FOLDER_CACHE_ = {};
+const MONTH_SPREADSHEET_CACHE_ = {};
 
 const STATUS_DATASET = [
   'canceled',
@@ -17,7 +20,8 @@ const STATUS_DATASET = [
   'deliver',
   'delivered',
   'complete',
-  'completed'
+  'completed',
+  'Alert'
 ];
 
 const TARGET_HEADERS = [
@@ -66,6 +70,71 @@ const TARGET_HEADERS = [
   'Shipping Charge'
 ];
 
+function showTriggerControlDialog() {
+  const html = HtmlService.createHtmlOutput(`
+    <html>
+      <head>
+        <style>
+          body {
+            font-family: Arial;
+            text-align: center;
+            padding: 20px;
+          }
+          button {
+            padding: 10px 20px;
+            font-size: 14px;
+            margin-top: 15px;
+            cursor: pointer;
+          }
+          .status {
+            margin-top: 10px;
+            font-weight: bold;
+          }
+        </style>
+      </head>
+      <body>
+
+        <h3>Order Status Mover</h3>
+
+        <div class="status" id="status">Checking...</div>
+
+        <button onclick="toggle()">Start / Stop</button>
+
+        <script>
+          function loadStatus() {
+            google.script.run.withSuccessHandler(function(res) {
+              document.getElementById('status').innerText =
+                res ? "🟢 Running" : "🔴 Stopped";
+            }).isTriggerRunning();
+          }
+
+          function toggle() {
+            google.script.run.withSuccessHandler(function(res) {
+              if (res.action === 'started') {
+                document.getElementById('status').innerText = "🟢 Running";
+              } else {
+                document.getElementById('status').innerText = "🔴 Stopped";
+              }
+            }).toggleOrderStatusMoverTrigger();
+          }
+
+          loadStatus();
+        </script>
+
+      </body>
+    </html>
+  `)
+  .setWidth(300)
+  .setHeight(200);
+
+  SpreadsheetApp.getUi().showModalDialog(html, 'Trigger Control');
+}
+
+function isTriggerRunning() {
+  const triggers = ScriptApp.getProjectTriggers();
+  return triggers.some(t => t.getHandlerFunction() === STATUS_MOVER_TRIGGER_HANDLER);
+}
+
 function toggleOrderStatusMoverTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
   const existing = triggers.filter(function(t) {
@@ -104,9 +173,9 @@ function createStatusMoverTrigger_() {
 }
 
 function runOrderStatusMover() {
-  // Prevent concurrent execution: skip if a previous run is still in progress.
-  if (isRunLocked_()) {
-    logStatusMover_('WARN', 'Skipping run: previous execution still in progress or lock is stale-cleared', {
+  const executionLock = LockService.getScriptLock();
+  if (!executionLock.tryLock(1000)) {
+    logStatusMover_('WARN', 'Skipping run: previous execution still in progress', {
       lockAge: getRunLockAgeMinutes_()
     });
     return { skipped: true, reason: 'concurrent_run_lock' };
@@ -206,6 +275,7 @@ function runOrderStatusMover() {
 
     logStatusMover_('INFO', 'Run completed', result);
     clearRunLock_();
+    executionLock.releaseLock();
 
     return result;
   } catch (e) {
@@ -214,6 +284,7 @@ function runOrderStatusMover() {
       stack: e && e.stack ? e.stack : ''
     });
     clearRunLock_();
+    executionLock.releaseLock();
     throw e;
   }
 }
@@ -231,12 +302,7 @@ function clearRunLock_() {
 }
 
 function isRunLocked_() {
-  const val = PropertiesService.getScriptProperties().getProperty(RUN_LOCK_KEY_);
-  if (!val) return false;
-  const lockedAt = parseInt(val, 10);
-  if (isNaN(lockedAt)) return false;
-  // Treat lock as stale (previous crash) if older than RUN_LOCK_STALE_MS_.
-  return (new Date().getTime() - lockedAt) < RUN_LOCK_STALE_MS_;
+  return false;
 }
 
 function getRunLockAgeMinutes_() {
@@ -275,34 +341,60 @@ function getTargetSpreadsheetByOrderDate_(orderDate) {
   const monthName = MONTH_NAMES_[orderDate.getMonth()];
   const yearSuffix = String(orderDate.getFullYear()).slice(-2);
   const monthlyName = monthName + yearSuffix; // Example: March26
+  const monthCacheKey = yearName + '::' + monthlyName;
 
-  const parentFolder = DriveApp.getFolderById(STATUS_MOVER_PARENT_FOLDER_ID);
+  if (MONTH_SPREADSHEET_CACHE_[monthCacheKey]) {
+    return MONTH_SPREADSHEET_CACHE_[monthCacheKey];
+  }
+
+  const parentFolder = runWithRetry_(function() {
+    return DriveApp.getFolderById(STATUS_MOVER_PARENT_FOLDER_ID);
+  }, 'getTargetSpreadsheetByOrderDate_:getParentFolder');
   const yearFolderInfo = getOrCreateFolderByName_(parentFolder, yearName);
   const yearFolder = yearFolderInfo.folder;
-  const monthlyFiles = yearFolder.getFilesByName(monthlyName);
+  const monthlyFiles = runWithRetry_(function() {
+    return yearFolder.getFilesByName(monthlyName);
+  }, 'getTargetSpreadsheetByOrderDate_:getFilesByName');
 
   while (monthlyFiles.hasNext()) {
     const file = monthlyFiles.next();
     if (file.getMimeType() === MimeType.GOOGLE_SHEETS) {
-      const foundSpreadsheet = SpreadsheetApp.openById(file.getId());
-      return {
+      const foundSpreadsheet = runWithRetry_(function() {
+        return SpreadsheetApp.openById(file.getId());
+      }, 'getTargetSpreadsheetByOrderDate_:openExistingById');
+
+      const existingInfo = {
         spreadsheet: foundSpreadsheet,
         yearFolderCreated: yearFolderInfo.created,
         monthSpreadsheetCreated: false,
         monthlyName: monthlyName,
         yearName: yearName
       };
+      MONTH_SPREADSHEET_CACHE_[monthCacheKey] = existingInfo;
+      return existingInfo;
     }
   }
 
-  const createdFile = SpreadsheetApp.create(monthlyName);
+  const createdFile = runWithRetry_(function() {
+    return SpreadsheetApp.create(monthlyName);
+  }, 'getTargetSpreadsheetByOrderDate_:createSpreadsheet');
   const createdId = createdFile.getId();
-  const createdDriveFile = DriveApp.getFileById(createdId);
-  yearFolder.addFile(createdDriveFile);
+  const createdDriveFile = runWithRetry_(function() {
+    return DriveApp.getFileById(createdId);
+  }, 'getTargetSpreadsheetByOrderDate_:getCreatedDriveFile');
+  runWithRetry_(function() {
+    yearFolder.addFile(createdDriveFile);
+    return true;
+  }, 'getTargetSpreadsheetByOrderDate_:addFileToYearFolder');
 
   // Remove from root My Drive to keep only inside year folder.
-  const root = DriveApp.getRootFolder();
-  root.removeFile(createdDriveFile);
+  const root = runWithRetry_(function() {
+    return DriveApp.getRootFolder();
+  }, 'getTargetSpreadsheetByOrderDate_:getRootFolder');
+  runWithRetry_(function() {
+    root.removeFile(createdDriveFile);
+    return true;
+  }, 'getTargetSpreadsheetByOrderDate_:removeFromRoot');
 
   logStatusMover_('INFO', 'Monthly spreadsheet created', {
     yearFolder: yearName,
@@ -310,26 +402,40 @@ function getTargetSpreadsheetByOrderDate_(orderDate) {
     monthlySpreadsheetId: createdId
   });
 
-  return {
+  const createdInfo = {
     spreadsheet: createdFile,
     yearFolderCreated: yearFolderInfo.created,
     monthSpreadsheetCreated: true,
     monthlyName: monthlyName,
     yearName: yearName
   };
+  MONTH_SPREADSHEET_CACHE_[monthCacheKey] = createdInfo;
+  return createdInfo;
 }
 
 function getOrCreateFolderByName_(parentFolder, folderName) {
-  const folders = parentFolder.getFoldersByName(folderName);
-  if (folders.hasNext()) {
-    return { folder: folders.next(), created: false };
+  const cacheKey = parentFolder.getId() + '::' + folderName;
+  if (YEAR_FOLDER_CACHE_[cacheKey]) {
+    return { folder: YEAR_FOLDER_CACHE_[cacheKey], created: false };
   }
 
-  const created = parentFolder.createFolder(folderName);
+  const folders = runWithRetry_(function() {
+    return parentFolder.getFoldersByName(folderName);
+  }, 'getOrCreateFolderByName_:getFoldersByName');
+  if (folders.hasNext()) {
+    const existing = folders.next();
+    YEAR_FOLDER_CACHE_[cacheKey] = existing;
+    return { folder: existing, created: false };
+  }
+
+  const created = runWithRetry_(function() {
+    return parentFolder.createFolder(folderName);
+  }, 'getOrCreateFolderByName_:createFolder');
   logStatusMover_('INFO', 'Year folder created', {
     folderName: folderName,
     folderId: created.getId()
   });
+  YEAR_FOLDER_CACHE_[cacheKey] = created;
   return { folder: created, created: true };
 }
 
@@ -348,6 +454,8 @@ function getStatusMoverLogSheet_() {
 }
 
 function logStatusMover_(level, message, details) {
+  if (!ENABLE_STATUS_MOVER_LOGGING) return;
+
   const lv = String(level || 'INFO').toUpperCase();
   let text = String(message || '');
 
@@ -405,34 +513,53 @@ function ensureTargetSheet_(spreadsheet, sheetName) {
 }
 
 function appendCopiedRowFromSource_(sourceSheet, sourceRowIndex, targetSheet, width) {
-  const targetRow = runWithRetry_(function() {
-    return targetSheet.getLastRow() + 1;
-  }, 'appendCopiedRowFromSource_:getLastRow');
+  const sourceRange = sourceSheet.getRange(sourceRowIndex, 1, 1, width);
 
-  runWithRetry_(function() {
-    sourceSheet
-      .getRange(sourceRowIndex, 1, 1, width)
-      .copyTo(targetSheet.getRange(targetRow, 1, 1, width), { contentsOnly: false });
-    return true;
-  }, 'appendCopiedRowFromSource_:copyRow');
+  // ✅ exact values (keeps date format)
+  const rowDisplayValues = sourceRange.getDisplayValues();
+  const rowBackgrounds = sourceRange.getBackgrounds();
+  const rowFontColors = sourceRange.getFontColors();
 
-  runWithRetry_(function() {
-    targetSheet.setRowHeight(targetRow, sourceSheet.getRowHeight(sourceRowIndex));
-    return true;
-  }, 'appendCopiedRowFromSource_:setRowHeight');
-}
+  const sourceRowHeight = sourceSheet.getRowHeight(sourceRowIndex);
 
-function syncColumnWidths_(sourceSheet, targetSheet, width) {
-  for (let c = 1; c <= width; c++) {
-    const sourceWidth = sourceSheet.getColumnWidth(c);
-    runWithRetry_(function() {
-      targetSheet.setColumnWidth(c, sourceWidth);
-      return true;
-    }, 'syncColumnWidths_:setColumnWidth:' + c);
+  // Fix column M
+  if (rowDisplayValues[0].length >= 13) {
+    rowDisplayValues[0][12] = '';
   }
+
+  // ✅ IMPORTANT: use setValues instead of appendRow
+  const targetRow = targetSheet.getLastRow() + 1;
+  const targetRange = targetSheet.getRange(targetRow, 1, 1, width);
+  
+  // force everything as text (IMPORTANT for Column H)
+  targetRange.setNumberFormat("@STRING@");
+  
+  // insert values (keeps dd-MM-yyyy exactly)
+  targetRange.setValues(rowDisplayValues);
+  
+  // styles
+  targetRange.setBackgrounds(rowBackgrounds);
+  targetRange.setFontColors(rowFontColors);
+  
+  // align
+  targetRange
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  
+  // keep ONLY this if needed (safe)
+  targetSheet.getRange(targetRow, 2).setNumberFormat("MMM dd, yyyy");
+  
+  // ❌ REMOVE THIS LINE (important fix)
+  // targetSheet.getRange(targetRow, 8).setNumberFormat("dd-MM-yyyy");
+  
+  // image formula
+  targetSheet.getRange(targetRow, 13).setFormula(`=IMAGE(AD${targetRow})`);
+  
+  // row height
+  targetSheet.setRowHeight(targetRow, sourceRowHeight);
 }
 
-  function deleteDefaultSheetIfNeeded_(spreadsheet, targetSheetName) {
+function deleteDefaultSheetIfNeeded_(spreadsheet, targetSheetName) {
     const defaultSheet = spreadsheet.getSheetByName('Sheet1');
     if (!defaultSheet) return;
     if (defaultSheet.getName() === targetSheetName) return;
@@ -443,6 +570,16 @@ function syncColumnWidths_(sourceSheet, targetSheet, width) {
       return true;
     }, 'deleteDefaultSheetIfNeeded_:deleteSheet1');
   }
+
+function syncColumnWidths_(sourceSheet, targetSheet, width) {
+  for (let c = 1; c <= width; c++) {
+    const sourceWidth = sourceSheet.getColumnWidth(c);
+    runWithRetry_(function() {
+      targetSheet.setColumnWidth(c, sourceWidth);
+      return true;
+    }, 'syncColumnWidths_:setColumnWidth:' + c);
+  }
+}
 
 function findMatchedStatusKeyword_(status) {
   const s = String(status == null ? '' : status).trim().toLowerCase();
@@ -513,20 +650,23 @@ function runWithRetry_(fn, label) {
     } catch (e) {
       lastError = e;
       const message = e && e.message ? e.message : String(e);
-      const isSpreadsheetServiceError = message.indexOf('Service error: Spreadsheets') !== -1;
+      const isRetryableServiceError =
+        message.indexOf('Service error: Spreadsheets') !== -1 ||
+        message.indexOf('Service error: Drive') !== -1 ||
+        message.indexOf('Service invoked too many times') !== -1;
 
       logStatusMover_('WARN', 'Retryable operation failed', {
         label: label || 'operation',
         attempt: attempt,
         message: message,
-        retrying: isSpreadsheetServiceError && attempt < maxAttempts
+        retrying: isRetryableServiceError && attempt < maxAttempts
       });
 
-      if (!isSpreadsheetServiceError || attempt === maxAttempts) {
+      if (!isRetryableServiceError || attempt === maxAttempts) {
         throw e;
       }
 
-      Utilities.sleep(500 * attempt);
+      Utilities.sleep(1000 * attempt);
     }
   }
 

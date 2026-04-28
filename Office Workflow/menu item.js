@@ -35,6 +35,12 @@ function onOpen() {
     .createMenu('Title Creation')
     .addItem('Title Creation','startAutomatedProcess')
     .addToUi();
+  SpreadsheetApp.getUi()
+    .createMenu('Flush Main sheet')
+    .addItem('Trigger Control', 'showTriggerControlDialog')
+    .addSeparator()
+    .addItem('Flush Now', 'runOrderStatusMover')
+    .addToUi();
 }
 
 
