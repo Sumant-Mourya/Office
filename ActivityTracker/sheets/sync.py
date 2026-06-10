@@ -1,4 +1,11 @@
-"""Google Sheets sync – simple daily summary + config sheet."""
+"""Google Sheets sync – date × hour matrix layout + config sheet.
+
+Layout:
+  Row 1   : Headers → A1="DATE", B1="12:00AM-01:00AM", C1="01:00AM-02:00AM", ...
+  Row 2+  : One row per date.  A=date, B..Y=hourly data cells.
+  Each hourly cell is updated every minute with the latest stats for that hour.
+  When the hour rolls over, the next column is used.
+"""
 
 import socket
 import ipaddress
@@ -11,12 +18,25 @@ from logger_setup import get_logger
 
 log = get_logger("sheets.sync")
 
-# Header columns for the PC data tab
-_HEADERS = [
-    "DATE", "TOTAL MOUSE CLICKS", "TOTAL KEY PRESSES",
-    "WEBSITES (time spent)", "APPS (time spent)",
-    "TOTAL ACTIVE TIME", "TOTAL IDLE TIME",
-]
+# 24 hour slots – column B through Y  (indices 1..24 in 0-based)
+_HOUR_SLOTS = []
+for _h in range(24):
+    _start = datetime(2000, 1, 1, _h, 0)
+    _end = datetime(2000, 1, 1, (_h + 1) % 24, 0) if _h < 23 else datetime(2000, 1, 2, 0, 0)
+    _HOUR_SLOTS.append(f"{_start.strftime('%I:%M%p')}-{_end.strftime('%I:%M%p')}")
+
+# Full header row: DATE + 24 hour slots
+_HEADERS = ["DATE"] + _HOUR_SLOTS
+
+# Column letters A-Y (25 columns)
+def _col_letter(idx: int) -> str:
+    """Convert 0-based column index to spreadsheet column letter(s)."""
+    if idx < 26:
+        return chr(65 + idx)
+    # For safety, support beyond Z
+    first = idx // 26 - 1
+    second = idx % 26
+    return chr(65 + first) + chr(65 + second)
 
 
 def _get_local_ip() -> str:
@@ -81,7 +101,7 @@ def _get_local_ip() -> str:
 
 
 class SheetSync:
-    """Simple daily-summary sync + config tab."""
+    """Date × Hour matrix sync + config tab."""
 
     def __init__(self, creds, spreadsheet_id: str, sheet_name: str):
         self.spreadsheet_id = spreadsheet_id
@@ -115,10 +135,11 @@ class SheetSync:
             ).execute()
             log.info("Created sheet tab '%s'", self.sheet_name)
 
-        # Always write headers on row 1
+        # Write full header row: DATE + 24 hour columns
+        end_col = _col_letter(len(_HEADERS) - 1)
         self.sheets.values().update(
             spreadsheetId=self.spreadsheet_id,
-            range=f"'{self.sheet_name}'!A1:G1",
+            range=f"'{self.sheet_name}'!A1:{end_col}1",
             valueInputOption="RAW",
             body={"values": [_HEADERS]},
         ).execute()
@@ -126,10 +147,10 @@ class SheetSync:
     def log_start_time(self):
         """Append a row with the program start timestamp."""
         now_str = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-        row = [[f"▶ Program started: {now_str}", "", "", "", "", "", ""]]
+        row = [[f"▶ Program started: {now_str}"] + [""] * 24]
         self.sheets.values().append(
             spreadsheetId=self.spreadsheet_id,
-            range=f"'{self.sheet_name}'!A:G",
+            range=f"'{self.sheet_name}'!A:Y",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": row},
@@ -139,7 +160,7 @@ class SheetSync:
     # ── Config sheet ──────────────────────────────────────────────────
 
     def ensure_config_sheet(self, pc_name: str):
-        """Create / update a 'config' tab with pc_name + local WiFi IP."""
+        """Create / update a 'config' tab with pc_name + local WiFi/LAN IPs."""
         tab = "config"
         if not self._tab_exists(tab):
             self.sheets.batchUpdate(
@@ -274,43 +295,65 @@ class SheetSync:
         m, s = divmod(rem, 60)
         return f"{h}h {m}m {s}s"
 
-    # ── Sync – one row per date with daily totals ─────────────────────
+    @staticmethod
+    def _hour_slot_index(hour_slot: str) -> int | None:
+        """Convert hour slot string like '10:00AM-11:00AM' to 0-based hour index."""
+        try:
+            start_str = hour_slot.split("-")[0].strip().upper()
+            dt = datetime.strptime(start_str, "%I:%M%p")
+            return dt.hour
+        except Exception:
+            return None
+
+    # ── Sync – date × hour matrix ────────────────────────────────────
 
     def sync(self, data: dict):
-        """Upsert a single summary row for the given date."""
+        """Upsert hourly data into the date×hour matrix.
+
+        Each date gets one row.  Each hour-slot maps to a column (B=00:00, C=01:00, …).
+        The cell for the current hour is updated every call (every minute).
+        """
         target_date = data["date"]
         hours_data = data.get("hours", {})
 
-        # Aggregate totals across all hours
-        total_mouse = sum(
-            h.get("mouse_clicks", 0) for h in hours_data.values())
-        total_keys = sum(
-            h.get("key_presses", 0) for h in hours_data.values())
-        total_work = sum(
-            h.get("work_seconds", 0) for h in hours_data.values())
-        total_idle = sum(
-            h.get("idle_seconds", 0) for h in hours_data.values())
+        # Build cell content for each active hour
+        hour_cells: dict[int, str] = {}  # hour_index -> cell text
+        for slot, hdata in hours_data.items():
+            idx = self._hour_slot_index(slot)
+            if idx is None:
+                continue
 
-        # Merge website usage across all hours
-        all_websites: dict[str, float] = {}
-        all_apps: dict[str, float] = {}
-        for hdata in hours_data.values():
-            for site, sec in hdata.get("websites", {}).items():
-                all_websites[site] = all_websites.get(site, 0) + sec
-            for app, sec in hdata.get("windows", {}).items():
-                all_apps[app] = all_apps.get(app, 0) + sec
+            mouse = hdata.get("mouse_clicks", 0)
+            keys = hdata.get("key_presses", 0)
+            work = hdata.get("work_seconds", 0)
+            idle = hdata.get("idle_seconds", 0)
+            websites = hdata.get("websites", {})
+            windows = hdata.get("windows", {})
 
-        row = [
-            target_date,
-            str(total_mouse),
-            str(total_keys),
-            self._fmt_usage(all_websites),
-            self._fmt_usage(all_apps),
-            self._fmt_seconds(total_work),
-            self._fmt_seconds(total_idle),
-        ]
+            cell_lines = [
+                f"Mouse: {mouse} | Keys: {keys}",
+                f"Work: {self._fmt_seconds(work)} | Idle: {self._fmt_seconds(idle)}",
+            ]
 
-        # Find existing date row (skip header and start-time rows)
+            # Top 5 apps
+            if windows:
+                top_apps = sorted(windows.items(), key=lambda x: -x[1])[:5]
+                app_parts = [f"{a}: {self._fmt_seconds(s)}" for a, s in top_apps]
+                cell_lines.append(f"Apps: {', '.join(app_parts)}")
+
+            # Top 5 websites
+            if websites:
+                top_sites = sorted(websites.items(), key=lambda x: -x[1])[:5]
+                site_parts = [f"{s}: {self._fmt_seconds(t)}" for s, t in top_sites]
+                cell_lines.append(f"Sites: {', '.join(site_parts)}")
+
+            hour_cells[idx] = "\n".join(cell_lines)
+
+        if not hour_cells:
+            log.debug("No hour data to sync for %s", target_date)
+            return
+
+        # Find existing date row (skip header row 1, skip start-time rows)
         try:
             result = self.sheets.values().get(
                 spreadsheetId=self.spreadsheet_id,
@@ -324,29 +367,63 @@ class SheetSync:
         row_idx = None
         for i, r in enumerate(existing):
             if r and r[0] == target_date:
-                row_idx = i + 1
+                row_idx = i + 1  # 1-based
                 break
 
-        try:
-            if row_idx:
-                self.sheets.values().update(
-                    spreadsheetId=self.spreadsheet_id,
-                    range=f"'{self.sheet_name}'!A{row_idx}:G{row_idx}",
-                    valueInputOption="RAW",
-                    body={"values": [row]},
-                ).execute()
-            else:
+        # If no row exists for this date, append a new row with the date in col A
+        if not row_idx:
+            try:
+                # Append a row with just the date; we'll fill hour cells next
                 self.sheets.values().append(
                     spreadsheetId=self.spreadsheet_id,
-                    range=f"'{self.sheet_name}'!A:G",
+                    range=f"'{self.sheet_name}'!A:A",
                     valueInputOption="RAW",
                     insertDataOption="INSERT_ROWS",
-                    body={"values": [row]},
+                    body={"values": [[target_date]]},
                 ).execute()
-            log.debug("Synced summary row for %s", target_date)
-        except HttpError as exc:
-            log.error("Sheet sync failed: %s", exc)
-            raise
+                # Re-read to find the actual row index
+                result = self.sheets.values().get(
+                    spreadsheetId=self.spreadsheet_id,
+                    range=f"'{self.sheet_name}'!A:A",
+                ).execute()
+                existing = result.get("values", [])
+                for i, r in enumerate(existing):
+                    if r and r[0] == target_date:
+                        row_idx = i + 1
+                        break
+                if not row_idx:
+                    log.error("Could not find newly appended row for %s", target_date)
+                    return
+            except HttpError as exc:
+                log.error("Failed to append date row: %s", exc)
+                return
+
+        # Update each hour cell individually
+        batch_data = []
+        for hour_idx, cell_text in hour_cells.items():
+            col = _col_letter(hour_idx + 1)  # +1 because col A is DATE
+            cell_range = f"'{self.sheet_name}'!{col}{row_idx}"
+            batch_data.append({
+                "range": cell_range,
+                "values": [[cell_text]],
+            })
+
+        if batch_data:
+            try:
+                self.sheets.values().batchUpdate(
+                    spreadsheetId=self.spreadsheet_id,
+                    body={
+                        "valueInputOption": "RAW",
+                        "data": batch_data,
+                    },
+                ).execute()
+                log.debug(
+                    "Synced %d hour cell(s) for %s (row %d)",
+                    len(batch_data), target_date, row_idx,
+                )
+            except HttpError as exc:
+                log.error("Sheet sync failed: %s", exc)
+                raise
 
     # ── Access validation ─────────────────────────────────────────────
 

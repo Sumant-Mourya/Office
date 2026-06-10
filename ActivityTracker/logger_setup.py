@@ -11,13 +11,20 @@ _formatter = logging.Formatter(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+import sys
+
 _file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
 _file_handler.setFormatter(_formatter)
 _file_handler.setLevel(logging.DEBUG)
 
-_console_handler = logging.StreamHandler()
-_console_handler.setFormatter(_formatter)
-_console_handler.setLevel(logging.INFO)
+_console_handler = None
+if sys.stderr is not None:
+    try:
+        _console_handler = logging.StreamHandler()
+        _console_handler.setFormatter(_formatter)
+        _console_handler.setLevel(logging.INFO)
+    except Exception:
+        pass
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -25,5 +32,6 @@ def get_logger(name: str) -> logging.Logger:
     if not logger.handlers:
         logger.setLevel(logging.DEBUG)
         logger.addHandler(_file_handler)
-        logger.addHandler(_console_handler)
+        if _console_handler is not None:
+            logger.addHandler(_console_handler)
     return logger

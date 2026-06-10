@@ -8,13 +8,32 @@ and fetch data via the JSON API.
 
 import sys
 import os
+import warnings
+
+# In windowless PyInstaller builds, sys.stdout and sys.stderr are None.
+# Uvicorn's logging setup expects them to have an isatty() method and crashes.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
+# Suppress warnings from google libraries and others
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 if sys.platform.startswith("win"):
-    import asyncio
+    import multiprocessing
+    multiprocessing.freeze_support()
 
+    import asyncio
     # Proactor can emit noisy connection-reset callbacks on Windows when
     # clients disconnect abruptly; Selector is more stable for this app.
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+    # Enforce single instance running using named mutex (only in main process)
+    if __name__ == "__main__":
+        from setup_autostart import check_single_instance
+        if not check_single_instance():
+            sys.exit(0)
 
 # Ensure project root is on sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

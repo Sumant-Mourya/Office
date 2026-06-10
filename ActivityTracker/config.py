@@ -33,16 +33,8 @@ def _legacy_path(name: str) -> str:
 def _runtime_path(name: str) -> str:
     return os.path.join(USER_DATA_DIR, name)
 
-# Google OAuth
-_credentials_in_app_dir = os.path.join(BASE_DIR, "credentials.json")
-_credentials_in_bundle = os.path.join(BUNDLE_DIR, "credentials.json")
-CREDENTIALS_FILE = (
-    _credentials_in_app_dir
-    if os.path.exists(_credentials_in_app_dir)
-    else _credentials_in_bundle
-)
-TOKEN_FILE = _runtime_path("token.json")
-LEGACY_TOKEN_FILE = _legacy_path("token.json")
+# Service Account
+SERVICE_ACCOUNT_FILE = _runtime_path("service_account.json")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # Default Google Sheet ID. Can be overridden by UI and saved config.
@@ -65,12 +57,18 @@ LOG_FILE = os.path.join(LOG_DIR, "tracker.log")
 
 # Tracking intervals (seconds)
 SHEET_SYNC_INTERVAL = 60  # sync to Google Sheets every 1 minute
+LOCAL_SAVE_INTERVAL = 10     # save to local JSON every 10 seconds
 IDLE_THRESHOLD = 120       # seconds of no input before considered idle
 TRACKER_POLL_INTERVAL = 1  # poll active window every 1 second
 
-# Login credentials
-DEFAULT_USER = "admin"
-DEFAULT_PASS = "admin"
+# Pending sync tracking
+PENDING_SYNC_FILE = _runtime_path("pending_sync.json")
+
+# Firebase / Licensing
+FIREBASE_API_KEY = "AIzaSyAXA7xovAVEMz2q3A4pPfuWQuf8M9mdSBk"
+FIREBASE_PROJECT_ID = "acitivity-tracker-28"
+FIREBASE_AUTH_URL = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
+FIREBASE_FIRESTORE_URL = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents"
 
 # NiceGUI
 UI_PORT = 8580

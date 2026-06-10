@@ -86,10 +86,15 @@ def _save_payload(payload: dict) -> None:
         f.write(encrypted)
 
 
-def save_config(pc_name: str, sheet_id: str) -> None:
+def save_config(pc_name: str, sheet_id: str, sheet_backup_enabled: bool = False, user_id: str = "") -> None:
     """Encrypt and persist tracker config."""
     payload = _load_payload() or {}
-    payload.update({"pc_name": pc_name, "sheet_id": sheet_id})
+    payload.update({
+        "pc_name": pc_name,
+        "sheet_id": sheet_id,
+        "sheet_backup_enabled": sheet_backup_enabled,
+        "user_id": user_id,
+    })
     _save_payload(payload)
     log.info("Tracker config saved (encrypted).")
 
@@ -103,8 +108,26 @@ def load_config() -> dict | None:
         if not data.get("sheet_id"):
             # Backward compatibility for older config files.
             data["sheet_id"] = SHEET_ID
+        # Ensure sheet_backup_enabled is always present
+        data.setdefault("sheet_backup_enabled", False)
         return data
     return None
+
+
+def save_uploaded_sa_filename(filename: str) -> None:
+    """Save the original filename of the uploaded service account json."""
+    payload = _load_payload() or {}
+    payload["uploaded_sa_filename"] = filename
+    _save_payload(payload)
+    log.info("Uploaded service account filename saved: %s", filename)
+
+
+def load_uploaded_sa_filename() -> str:
+    """Load the original filename of the uploaded service account json."""
+    data = _load_payload()
+    if not data:
+        return ""
+    return data.get("uploaded_sa_filename", "")
 
 
 def save_view_filter(start_text: str, end_text: str) -> None:
